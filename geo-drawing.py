@@ -3,6 +3,8 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMenu, QVBoxLayout, QSizePolicy, QMessageBox, QWidget, QPushButton
 from PyQt5.QtGui import QIcon
 from PyQt5 import QtCore
+from PyQt5.QtCore import QSize
+
 import matplotlib
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -49,6 +51,7 @@ class MainForm(QMainWindow):
         self.title = 'PyQt MatplotLib 绘图工具'
         #self.width = 640
         #self.height = 400
+        #self.resize(QSize(640,480))
         self.initUI()
 
     def initUI(self):
@@ -56,7 +59,7 @@ class MainForm(QMainWindow):
         self.setWindowTitle(self.title)
         #self.setGeometry(self.left, self.top, self.width, self.height)
 
-        m = DrawCanvas(self, width=8, height=6)
+        m = DrawCanvas(self, width=12, height=8)
         self.setCentralWidget(m)
         m.mydraw()
         self.showMaximized()
@@ -81,11 +84,21 @@ class DrawCanvas(FigureCanvas):
 
         self.initial_figure(1,0.1,0.5,0.05)
         self.fig.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
-        self.fig.canvas.mpl_connect('button_press_event', self.on_button_press)
+        #self.fig.canvas.mpl_connect('button_press_event', self.on_button_press)
+        self.fig.canvas.mpl_connect('button_release_event', self.on_button_release)
         self.fig.canvas.mpl_connect('pick_event', self.onpick)
 
-        self.selectlineobj = None #当前选择的线型
+
+        """
+        下面为对图像对象的操作用到的变量
+        """
+        self.selectlineobj = None #当前选中的线型(初期是选中的对象，不限于line)
         self.oldcolor = None  #保存当前对象的OLDCOLOR，以供选择对象换了后恢复COLOR
+        self.objselectedxy = (0,0) #对象选中时的mousexy,结合 selectlineobj和mouse松开时的 xydata来决定是否移动对象
+        self.ismoveobj = False #是否开始移动OBJ
+        """
+        上面为对图像对象的操作用到的变量
+        """
 
         timer = QtCore.QTimer(self)
         timer.timeout.connect(self.change_selectobj_color)
@@ -98,29 +111,36 @@ class DrawCanvas(FigureCanvas):
             return
 
         self.counttime = not self.counttime
-        self.selectlineobj.set_color('red' if self.counttime else 'blue')
+        if isinstance(self.selectlineobj,Rectangle) or \
+           isinstance(self.selectlineobj,Line2D) or \
+           isinstance(self.selectlineobj,Text):
+           self.selectlineobj.set_color('red' if self.counttime else 'blue')
+
         self.draw()
+
+    def restorecolor(self):
+        """恢复原来选中的图像的颜色"""
+        if self.selectlineobj != None:  #还原原来的LINE COLOR
+            if isinstance(self.selectlineobj,Line2D) or \
+               isinstance(self.selectlineobj,Text) or \
+               isinstance(self.selectlineobj,Rectangle):
+                self.selectlineobj.set_color(self.oldcolor)  #如果选择了新的对象，且不是第一次选择，则恢复以前的COLOR
+
+    def saveselectartistcolor(self):
+        """保存选中的图像原来颜色"""
+        if isinstance(self.selectlineobj, Line2D) or \
+           isinstance(self.selectlineobj, Text):
+            self.oldcolor = self.selectlineobj.get_color()
+        elif isinstance(self.selectlineobj,Rectangle):
+            self.oldcolor = self.selectlineobj.get_ec()
 
     def onpick(self,event):
         """拾取事件"""
         #判断是哪类对象，再进行处理。
-
-        if isinstance(event.artist, Line2D):
-            if id(self.selectlineobj) != id(event.artist):
-                if self.selectlineobj != None:  #还原原来的LINE COLOR
-                    self.selectlineobj.set_color(self.oldcolor)  #如果选择了新的对象，且不是第一次选择，则恢复以前的COLOR
-
-                self.oldcolor = event.artist.get_color()
-                self.selectlineobj = event.artist  #保存新选择的对象，以便于进行闪烁显示
-
-        elif isinstance(event.artist, Rectangle):
-            patch = event.artist
-            print('onpick1 patch:', patch.get_path())
-        elif isinstance(event.artist, Text):
-            text = event.artist
-            print('onpick1 text:', text.get_text())
-        else:
-            print('None selected')
+        if self.selectlineobj == None or  (id(self.selectlineobj) != id(event.artist)):
+            self.restorecolor()
+            self.selectlineobj = event.artist  #保存新选择的对象，以便于进行闪烁显示
+            self.saveselectartistcolor()
 
     def on_mouse_move(self,event):
         """鼠标移动事件,可检测 event.button得到当前是哪个键被按下"""
@@ -128,6 +148,11 @@ class DrawCanvas(FigureCanvas):
     def on_button_press(self,event):
         """鼠标点击事件,event.xdata,ydata为在当前坐标轴下的实际坐标，button(1,2,3)分别为鼠标的左中右三键"""
         """点击事件在pick事件之后"""
+        #print("press xydata:",event.xdata,event.ydata)
+
+    def on_button_release(self,event):
+        """鼠标被放开"""
+        #print("release xydata:",event.xdata,event.ydata)
 
     def initial_figure(self,xmajor,xminjor,ymajor,yminjor):
         """初始化一些设置,传入xy的主次刻度值"""
@@ -161,7 +186,7 @@ class DrawCanvas(FigureCanvas):
         self.axes.yaxis.set_minor_locator(yminorLocator)
 
 
-        self.axes.grid(which='major',linestyle='--',color='blue',axis='both')
+        #self.axes.grid(which='major',linestyle='--',color='blue',axis='both')
         #self.axes.xaxis.grid(True,which='minor') #x坐标轴的网格使用主刻度
         #self.axes.yaxis.grid(True, which='minor') #y坐标轴的网格使用次刻度
 
@@ -171,11 +196,11 @@ class DrawCanvas(FigureCanvas):
         s = sin(2*pi*t)
         cs = cos(2*pi*t)
         self.axes.set_ylim(-3,3)
-        sinx = self.axes.plot(t, s,picker=5)
-        cosx =self.axes.plot(t,cs,picker=5) #self.line_picker
-        self.axes.plot([-1,1],[-1,1],[-1,0],[0,1],color='yellow',picker=5)
-        self.axes.add_patch(patches.Rectangle((-2.0, -1.0),1.5,2.5,picker=5))
-        self.axes.text(0.5,2.5,'测试文本test.text',fontproperties=myfont,picker=5)
+        sinx = self.axes.plot(t, s,picker=True)
+        cosx =self.axes.plot(t,cs,picker=True) #self.line_picker
+        self.axes.plot([-1,1],[-1,1],[-1,0],[0,1],color='yellow',picker=2.0)
+        self.axes.add_patch(patches.Rectangle((-2.0, -1.0),1.5,2.5,picker=True,fill=False))
+        self.axes.text(0.5,2.5,'测试文本test.text',fontproperties=myfont,picker=True)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
