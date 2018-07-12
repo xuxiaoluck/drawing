@@ -3,6 +3,7 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMenu, QVBoxLayout, QSizePolicy, QMessageBox, QWidget, QPushButton
 from PyQt5.QtGui import QIcon
 from PyQt5 import QtCore
+import matplotlib
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
@@ -12,13 +13,32 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from matplotlib.text import Text
 import matplotlib.patches as patches
+from matplotlib.font_manager import *
 
 from numpy import arange, sin,cos, pi
 
 import numpy as np
 import time
-
 import random
+
+from enum import Enum
+
+
+#设置中文字体
+myfont = FontProperties(fname='/usr/share/fonts/truetype/wqy/wqy-microhei.ttc')
+#解决负号'-'显示为方块的问题
+matplotlib.rcParams['axes.unicode_minus'] = False
+
+
+class Flags(Enum):
+    """一个标志枚举类"""
+    MouseLeft = 1
+    MouseMiddle = 2
+    MouseRight = 3
+    SelectedLine = 4
+    SelectedRect = 5
+    SelectedText = 6
+
 
 class MainForm(QMainWindow):
     """主窗口界面，设为窗口的主控件，不用再设置大小起点，显示时最大化"""
@@ -68,11 +88,12 @@ class DrawCanvas(FigureCanvas):
         self.oldcolor = None  #保存当前对象的OLDCOLOR，以供选择对象换了后恢复COLOR
 
         timer = QtCore.QTimer(self)
-        timer.timeout.connect(self.update_figure)
+        timer.timeout.connect(self.change_selectobj_color)
         timer.start(500)  #一个时间定时器，用来动态显示选择的对象
         self.counttime = True
 
-    def update_figure(self):
+    def change_selectobj_color(self):
+        """时钟事件，动态改变所选线条颜色"""
         if self.selectlineobj == None:
             return
 
@@ -80,19 +101,10 @@ class DrawCanvas(FigureCanvas):
         self.selectlineobj.set_color('red' if self.counttime else 'blue')
         self.draw()
 
-    def on_mouse_move(self,event):
-        """鼠标移动事件"""
-        #print((event.x,event.y))
-        #self.fig.canvas.draw_idle()
-
-
-    def on_button_press(self,event):
-        """鼠标点击事件,event.xdata,ydata为在当前坐标轴下的实际坐标，button(1,2,3)分别为鼠标的左中右三键"""
-        #print(event.xdata,event.ydata)
-
     def onpick(self,event):
         """拾取事件"""
         #判断是哪类对象，再进行处理。
+
         if isinstance(event.artist, Line2D):
             if id(self.selectlineobj) != id(event.artist):
                 if self.selectlineobj != None:  #还原原来的LINE COLOR
@@ -100,7 +112,6 @@ class DrawCanvas(FigureCanvas):
 
                 self.oldcolor = event.artist.get_color()
                 self.selectlineobj = event.artist  #保存新选择的对象，以便于进行闪烁显示
-
 
         elif isinstance(event.artist, Rectangle):
             patch = event.artist
@@ -111,7 +122,12 @@ class DrawCanvas(FigureCanvas):
         else:
             print('None selected')
 
+    def on_mouse_move(self,event):
+        """鼠标移动事件,可检测 event.button得到当前是哪个键被按下"""
 
+    def on_button_press(self,event):
+        """鼠标点击事件,event.xdata,ydata为在当前坐标轴下的实际坐标，button(1,2,3)分别为鼠标的左中右三键"""
+        """点击事件在pick事件之后"""
 
     def initial_figure(self,xmajor,xminjor,ymajor,yminjor):
         """初始化一些设置,传入xy的主次刻度值"""
@@ -159,6 +175,7 @@ class DrawCanvas(FigureCanvas):
         cosx =self.axes.plot(t,cs,picker=5) #self.line_picker
         self.axes.plot([-1,1],[-1,1],[-1,0],[0,1],color='yellow',picker=5)
         self.axes.add_patch(patches.Rectangle((-2.0, -1.0),1.5,2.5,picker=5))
+        self.axes.text(0.5,2.5,'测试文本test.text',fontproperties=myfont,picker=5)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
